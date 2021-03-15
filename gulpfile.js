@@ -1,77 +1,84 @@
-const gulp = require('gulp')
-const sass = require('gulp-sass')
-const pug = require('gulp-pug')
-const rmfr = require('rmfr')
-const fs = require('fs')
-const connect = require('gulp-connect')
-const puppeteer = require('puppeteer')
+const { task, series, watch, parallel, src, dest } = require('gulp');
+const sass = require('gulp-sass');
+const pug = require('gulp-pug');
+const rmfr = require('rmfr');
+const fs = require('fs');
+const connect = require('gulp-connect');
+const puppeteer = require('puppeteer');
 
-gulp.task('resume-sass', () => {
-  gulp
-    .src('src/scss/resume.scss')
-    .pipe(sass().on('error', sass.logError))
-    .pipe(gulp.dest('dist/css/'))
-    .pipe(connect.reload())
-})
+task('resume-sass', () => {
+    return src('src/scss/resume.scss')
+        .pipe(sass().on('error', sass.logError))
+        .pipe(dest('dist/css/'))
+        .pipe(connect.reload());
+});
 
-gulp.task('sass:watch', () => {
-  gulp.watch('./src/scss/resume.scss', ['resume-sass'])
-  gulp.watch('./src/scss/components/*.scss', ['resume-sass'])
-})
+task(
+    'sass:watch',
+    series(() => {
+        watch('./src/scss/resume.scss', series('resume-sass'));
+        watch('./src/scss/components/*.scss', series('resume-sass'));
+        return Promise.resolve('the value is ignored');
+    })
+);
 
-gulp.task('json2pug', () => {
-  const locals = JSON.parse(fs.readFileSync('./resume.json', 'utf-8'))
-  gulp
-    .src('./src/pug/index.pug')
-    .pipe(
-      pug({
-        locals
-      })
-    )
-    .pipe(gulp.dest('./dist/'))
-    .pipe(connect.reload())
-})
+task('json2pug', () => {
+    const locals = JSON.parse(fs.readFileSync('./resume.json', 'utf-8'));
+    return src('./src/pug/index.pug')
+        .pipe(
+            pug({
+                locals,
+            })
+        )
+        .pipe(dest('./dist/'))
+        .pipe(connect.reload());
+});
 
-gulp.task('json2pug:watch', () => {
-  gulp.watch('./resume.json', ['json2pug'])
-  gulp.watch('./src/pug/*.pug', ['json2pug'])
-})
+task('json2pug:watch', () => {
+    watch('./resume.json', series('json2pug'));
+    watch('./src/pug/*.pug', series('json2pug'));
+    return Promise.resolve('the value is ignored');
+});
 
 function src2dist(dir) {
-  return gulp.src(`./src/${dir}/*.*`).pipe(gulp.dest(`./dist/${dir}/`))
+    return src(`./src/${dir}/*.*`).pipe(dest(`./dist/${dir}/`));
 }
 
-gulp.task('copy', () => {
-  src2dist('pdf')
-})
+task('copy', () => {
+    src2dist('pdf');
+    return Promise.resolve('the value is ignored');
+});
 
-gulp.task('clean', () => {
-  rmfr('./dist/')
-})
+task('clean', () => {
+    rmfr('./dist/');
+});
 
-let port = 9000
+let port = 9000;
 
-gulp.task('set-pdf-port', () => {
+task('set-pdf-port', () => {
   port = 9001
+  return Promise.resolve('the value is ignored');
 })
 
-gulp.task('set-screenshot-port', () => {
+task('set-screenshot-port', () => {
   port = 9002
+  return Promise.resolve('the value is ignored');
 })
 
-gulp.task('webserver', () => {
-  connect.server({
-    root: './dist',
-    livereload: true,
-    port
-  })
-})
+task('webserver', () => {
+    connect.server({
+        root: './dist',
+        livereload: true,
+        port,
+    });
+    return Promise.resolve('the value is ignored');
+});
 
-gulp.task('default', ['resume-sass', 'json2pug', 'copy'])
+task('default', series('resume-sass', 'json2pug', 'copy'));
 
-gulp.task('dev', ['default', 'json2pug:watch', 'sass:watch', 'webserver'])
+task('dev', parallel('default', 'json2pug:watch', 'sass:watch', 'webserver'));
 
-gulp.task('pdf', ['set-pdf-port', 'default', 'webserver'], async () => {
+task('pdf', parallel('set-pdf-port', 'default', 'webserver'), async () => {
   const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] })
   const page = await browser.newPage()
 
@@ -104,28 +111,28 @@ gulp.task('pdf', ['set-pdf-port', 'default', 'webserver'], async () => {
   process.exit(0)
 })
 
-gulp.task('screenshot', ['set-screenshot-port', 'default', 'webserver'], async () => {
-  const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] })
-  const page = await browser.newPage()
+// task('screenshot', parallel('set-screenshot-port', 'default', 'webserver'), async () => {
+//   const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] })
+//   const page = await browser.newPage()
 
-  // In the case of multiple pages in a single browser, each page can have its own viewport size.
-  await page.setViewport({
-    width: 1440,
-    height: 900
-  })
+//   // In the case of multiple pages in a single browser, each page can have its own viewport size.
+//   await page.setViewport({
+//     width: 1440,
+//     height: 900
+//   })
 
-  // networkidle0 - consider navigation to be finished when there are no more than 0 network connections for at least 500 ms.
-  await page.goto('http://localhost:9002', {waitUntil: 'networkidle0'})
+//   // networkidle0 - consider navigation to be finished when there are no more than 0 network connections for at least 500 ms.
+//   await page.goto('http://localhost:9002', {waitUntil: 'networkidle0'})
 
-  await page.screenshot({
-    path: './screenshot/screenshot.png',
-    fullPage: true,
-    omitBackground: true
-  })
+//   await page.screenshot({
+//     path: './screenshot/screenshot.png',
+//     fullPage: true,
+//     omitBackground: true
+//   })
 
-  console.log('截图已生成, 目录./screenshot')
-  browser.close()
+//   console.log('截图已生成, 目录./screenshot')
+//   browser.close()
 
-  connect.serverClose()
-  process.exit(0)
-})
+//   connect.serverClose()
+//   process.exit(0)
+// })
